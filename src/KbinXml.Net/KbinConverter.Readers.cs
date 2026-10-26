@@ -433,6 +433,14 @@ public static partial class KbinConverter
                 : DataReader.ReadBytes(arraySize);
             var span = spanResult.Span;
 
+            // A scalar needs exactly one string. Avoid constructing and disposing
+            // a temporary builder for the common single-value node.
+            if (!isArray && propertyType.Count == 1)
+            {
+                HoldValue = propertyType.Serialize(span);
+                return;
+            }
+
             Span<char> charSpan = stackalloc char[Constants.MaxStackLength];
             var stringBuilder = new ValueStringBuilder(charSpan);
             var loopCount = arraySize / propertyType.Size;
