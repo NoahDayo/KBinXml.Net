@@ -13,6 +13,9 @@ internal ref partial struct NodeReader : IKBinReader
     private readonly bool _compressed;
 
     private int _position;
+    private ulong _lastCompressedKey;
+    private byte _lastCompressedLength;
+    private string? _lastCompressedValue;
 
     public NodeReader(ReadOnlySpan<byte> span, Encoding encoding, bool compressed)
     {
@@ -35,9 +38,11 @@ internal ref partial struct NodeReader : IKBinReader
     private ValueReadResult<string> ReadCompressedString(byte length)
     {
         var byteCount = (length * 6 + 7) / 8;
-        //var spanResult = ReadBytes((int)Math.Ceiling(length * 6 / 8.0));
         var spanResult = ReadBytes(byteCount);
-        var readString = SixbitHelper.Decode(spanResult.Span, length);
+        // Short names fit in a lossless key; leave longer names on the direct decode path.
+        var readString = byteCount <= 5 && spanResult.Span.Length == byteCount
+            ? DecodeShortCached(spanResult.Span, length)
+            : SixbitHelper.Decode(spanResult.Span, length);
         return new ValueReadResult<string>
         (
             readString
@@ -45,6 +50,24 @@ internal ref partial struct NodeReader : IKBinReader
             , spanResult.ReadStatus
 #endif
         );
+    }
+
+    // Keep the lookup code out of the common long-name path.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private string DecodeShortCached(ReadOnlySpan<byte> bytes, byte length)
+    {
+        ulong key = 0;
+        for (var i = 0; i < bytes.Length; i++)
+            key |= (ulong)bytes[i] << (i * 8);
+
+        if (_lastCompressedValue != null && _lastCompressedLength == length && _lastCompressedKey == key)
+            return _lastCompressedValue;
+
+        var value = SixbitHelper.Decode(bytes, length);
+        _lastCompressedKey = key;
+        _lastCompressedLength = length;
+        _lastCompressedValue = value;
+        return value;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

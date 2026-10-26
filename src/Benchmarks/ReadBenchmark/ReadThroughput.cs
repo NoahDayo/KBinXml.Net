@@ -7,7 +7,13 @@ using KbinXml.Net;
 namespace ReadBenchmark;
 
 [MemoryDiagnoser]
+#if NET8_0
+[SimpleJob(RuntimeMoniker.Net80)]
+#elif NET9_0
+[SimpleJob(RuntimeMoniker.Net90)]
+#else
 [SimpleJob(RuntimeMoniker.Net10_0)]
+#endif
 public class ReadThroughput
 {
     private byte[] _mixed = null!;
