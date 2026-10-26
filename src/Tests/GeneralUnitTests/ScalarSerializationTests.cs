@@ -7,6 +7,7 @@ namespace GeneralUnitTests;
 
 public class ScalarSerializationTests
 {
+#if NET8_0_OR_GREATER
     [Fact]
     public void DirectScalarSerializationMatchesBuilderPath()
     {
@@ -34,4 +35,5 @@ public class ScalarSerializationTests
             }
         }
     }
+#endif
 }

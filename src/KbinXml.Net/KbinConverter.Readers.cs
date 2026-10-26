@@ -274,6 +274,11 @@ public static partial class KbinConverter
         public DataReader DataReader;
         public string? CurrentType;
         public string? HoldValue;
+#if NET10_0_OR_GREATER && !USELOG
+        private ReadOnlySpan<byte> _holdBinary;
+        private bool _hasHoldBinary;
+        private bool _holdBinaryUppercase;
+#endif
 
         public ReadContext(ReadOptions readOptions, NodeReader nodeReader, DataReader dataReader, WriterProvider writerProvider,
             KnownEncodings knownEncoding)
@@ -297,12 +302,7 @@ public static partial class KbinConverter
                     ProcessAttribute();
                     break;
                 case ControlType.NodeEnd:
-                    if (HoldValue != null)
-                    {
-                        WriterProvider.WriteElementValue(HoldValue);
-                        HoldValue = null;
-                    }
-
+                    FlushHeldValue();
                     WriterProvider.WriteEndElement();
                     break;
                 case ControlType.FileEnd:
@@ -316,11 +316,7 @@ public static partial class KbinConverter
 
         public void ProcessDataNode(NodeType propertyType, bool isArray)
         {
-            if (HoldValue != null)
-            {
-                WriterProvider.WriteElementValue(HoldValue);
-                HoldValue = null;
-            }
+            FlushHeldValue();
 
             var elementNameResult = NodeReader.ReadString();
             var elementName = elementNameResult.Value;
@@ -352,11 +348,7 @@ public static partial class KbinConverter
 
         private void ProcessNodeStart()
         {
-            if (HoldValue != null)
-            {
-                WriterProvider.WriteElementValue(HoldValue);
-                HoldValue = null;
-            }
+            FlushHeldValue();
 
             var elementNameResult = NodeReader.ReadString();
             var elementName = elementNameResult.Value;
@@ -407,10 +399,39 @@ public static partial class KbinConverter
             WriterProvider.WriteStartAttribute("__size");
             WriterProvider.WriteAttributeValue(arraySize.ToString());
             WriterProvider.WriteEndAttribute();
+#if NET10_0_OR_GREATER && !USELOG
+            if (WriterProvider is XmlWriterProvider)
+            {
+                _holdBinary = DataReader.ReadBytes32BitAligned(arraySize).Span;
+                _hasHoldBinary = true;
+                _holdBinaryUppercase = upper;
+                return;
+            }
+#endif
             var valueReadResult = DataReader.ReadBinary(arraySize, upper);
             HoldValue = valueReadResult.Value;
 #if USELOG
             Logger.LogBinaryValue(HoldValue, valueReadResult.ReadStatus.Offset, valueReadResult.ReadStatus.Flag);
+#endif
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void FlushHeldValue()
+        {
+            if (HoldValue != null)
+            {
+                WriterProvider.WriteElementValue(HoldValue);
+                HoldValue = null;
+                return;
+            }
+
+#if NET10_0_OR_GREATER && !USELOG
+            if (_hasHoldBinary)
+            {
+                ((XmlWriterProvider)WriterProvider).WriteBinaryValue(_holdBinary, _holdBinaryUppercase);
+                _holdBinary = default;
+                _hasHoldBinary = false;
+            }
 #endif
         }
 
